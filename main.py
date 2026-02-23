@@ -27,7 +27,7 @@ try:
     with psycopg.connect(conn_info) as conn:
         with conn.cursor() as cur:
             # Substitua pela sua tabela real de questões
-            cur.execute("SELECT id, enunciado FROM questoes LIMIT 3;")
+            cur.execute("SELECT id, statement FROM question LIMIT 3;")
             registros = cur.fetchall()
             
             # 3. Constrói o conteúdo dinâmico (Prompt Engineering)
