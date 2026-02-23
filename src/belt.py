@@ -1,5 +1,5 @@
 import db
-import gemini
+import liteLLM
 import miia_api
 import sheet
 from dotenv import load_dotenv
@@ -13,14 +13,14 @@ def main():
     path_google_json = './auth_google.json' 
 
     clientMIIA = miia_api.MIIA_API()
-    clientGemini = gemini.GeminiClient()
+    clientLLM = liteLLM.LiteLLMClient()
     database = db.Database()
     sheets = sheet.SheetManager(path_google_json, id_sheet, tab_name)
 
     print("\n[Sucesso] Todos os conectores instanciados! O sistema está pronto.")
 
     #integration_id = input("\nDigite o ID da integração que deseja validar: ")
-    integration_id = 3565993
+    integration_id = "CEISC_SIM_05_PC-RS_M-Q6" 
     data = database.get_question_structure(integration_id)
     statemet = data["statement"]
     criteria = data["criteria"]
@@ -38,11 +38,12 @@ def main():
 
     for grade in variation_in_grades:
 
-        content += f"\n\n{grade}"
-        answer = clientGemini.send_prompt(content)
+        current_content = content + f"\n\n{grade}"
+        answer = clientLLM.send_prompt(current_content)
         history_answers.append(answer)
         print(f"\n\n\n\n {answer}")   
 
+    
 
 
 if __name__ == "__main__":
