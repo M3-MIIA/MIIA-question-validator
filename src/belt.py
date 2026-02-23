@@ -20,8 +20,28 @@ def main():
     print("\n[Sucesso] Todos os conectores instanciados! O sistema está pronto.")
 
     #integration_id = input("\nDigite o ID da integração que deseja validar: ")
-    integration_id = 3566470
-    database.get_question_structure(integration_id)
+    integration_id = 3565993
+    data = database.get_question_structure(integration_id)
+    statemet = data["statement"]
+    criteria = data["criteria"]
+    
+    #print(statemet)
+    #print("\n")
+    #print(criteria)
+
+    content = f""" Veja o seguinte enunciado: {statemet}, que possui os seguinte critérios de avaliacao: {criteria}, me retorne UNICAMENTE UM JSON estruturado da seguinte forma: {{"content": [{{"answer": ""}}]}}. """
+    variation_in_grades = ["Produza uma resposta que dado os critérios avaliativos, tire uma nota ruim, não se respondendo adequadamente os critérios avaliativos e comentendo erros de escrita",
+                           "Produza uma resposta que dado os critérios avaliativos, tire uma nota média, respondendo parcialmente os critérios avaliativos e comentendo alguns erros de escrita",
+                           "Produza uma resposta que gabarite a questão, dados os critérios avaliativos, resultando em uma nota EXCELENTE/MÁXIMA, respondendo adequadamente os critérios avaliativos e sem erros de escrita"]
+
+    history_answers = []
+
+    for grade in variation_in_grades:
+
+        content += f"\n\n{grade}"
+        answer = clientGemini.send_prompt(content)
+        history_answers.append(answer)
+        print(f"\n\n\n\n {answer}")   
 
 
 
