@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import requests
 from dotenv import load_dotenv
@@ -19,6 +20,8 @@ class MIIA_API:
             "Content-Type": "application/json"
         }
         print(f"1. Sending POST to create Job...")
+        if isinstance(answer, str):
+            answer = json.loads(answer, strict=False)
         try:
             response_post = requests.post(url_post, headers=headers, json=answer)
             response_post.raise_for_status()
@@ -29,6 +32,7 @@ class MIIA_API:
                 raise ValueError("API did not return a valid job_id.")
 
             print(f"   [Success] Job created: {job_id}")
+            return job_id
 
         except requests.exceptions.RequestException as e:
             print(f"POST request failed: {e}")
