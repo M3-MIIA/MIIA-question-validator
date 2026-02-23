@@ -1,6 +1,7 @@
 import os
 import psycopg
 from dotenv import load_dotenv
+from psycopg.rows import dict_row
 
 class Database:
     
@@ -15,21 +16,82 @@ class Database:
         if not all(database_vars):
             raise ValueError("ERROR: missing database configuration variables in .env file.")
 
+
     def connect(self):
         conn_info = f"host={self.db_host} port={self.db_port} dbname={self.db_name} user={self.db_user} password={self.db_pass}"
         return psycopg.connect(conn_info)
 
+
     def get_question_structure(self, integration_id):
+        query = """
+        SELECT 
+            q.statement as question_statement,
+            q.type as question_type,
+            i.name as item_name,
+            i.max_score,
+            i.starts_max,
+            i.eval_mode as i_eval_mode,
+            g.name as grouping_name,
+            c.code as classification_code,
+            c.short_description,
+            cg.weight,
+            cg.type,
+            cg.eval_target,
+            cg.rigor_level,	
+            cg.eval_mode as cls_eval_mode
+        FROM question q
+        LEFT JOIN question_item qi ON q.id = qi.question_id
+        LEFT JOIN item i ON qi.item_id = i.id
+        LEFT JOIN item_grouping ig ON i.id = ig.item_id
+        LEFT JOIN grouping g ON ig.grouping_id = g.id
+        LEFT JOIN classification_grouping cg ON g.id = cg.grouping_id
+        LEFT JOIN classification c ON cg.classification_id = c.id
+        LEFT JOIN question_answer qa ON q.id = qa.question_id
+        LEFT JOIN job j ON qa.job_id = j.id
+        WHERE q.integration_id = %s::text
+        GROUP BY q.id, q.integration_id, q.statement, q.type, i.id, i.name, i.max_score, i.starts_max, i.eval_mode,
+                 g.id, g.name, c.id, c.code, c.short_description, cg.id, cg.weight, cg.type, cg.eval_target, cg.eval_mode
+        ORDER BY i.id, g.id, c.id;
+        """
+
         try:
             with self.connect() as conn:
-                with conn.cursor() as cur:
+                # O row_factory converte a saída para dicionários
+                with conn.cursor(row_factory=dict_row) as cur:
+                    
+                    # Passamos o integration_id como uma tupla (note a vírgula)
+                    cur.execute(query, (integration_id,))
+                    linhas = cur.fetchall()
 
-                    cur.execute("SELECT id, statement FROM question WHERE integration_id = %s;", (integration_id,))
+                    print(f"Buscadas {cur.rowcount} linhas de critério para o integration_id {integration_id}.")
 
-                    print(f"Fetched {cur.results} questions for integration_id {integration_id}.")
-                    return cur.fetchall()
-                
+                    # Fail-Fast: Se a query não trouxer nada, retorna vazio
+                    if not linhas:
+                        return None
+
+                    # Extrai os dados que são iguais para todas as linhas (pegamos da primeira linha [0])
+                    dados_estruturados = {
+                        "statement": linhas[0]["question_statement"],
+                        "type": linhas[0]["question_type"],
+                        "criteria": []
+                    }
+
+                    # Itera sobre todas as linhas para montar a estrutura tabular dos critérios
+                    for linha in linhas:
+                        criterio = {
+                            "item_name": linha["item_name"],
+                            "max_score": float(linha["max_score"]) if linha["max_score"] else None,
+                            "grouping_name": linha["grouping_name"],
+                            "classification_code": linha["classification_code"],
+                            "short_description": linha["short_description"],
+                            "weight": float(linha["weight"]) if linha["weight"] else None,
+                            "rigor_level": linha["rigor_level"]
+                            # Adicione as outras colunas que julgar necessárias aqui
+                        }
+                        dados_estruturados["criteria"].append(criterio)
+
+                    return dados_estruturados
 
         except Exception as e:
-            print(f"Database error: {e}")
-            return []
+            print(f"Erro no Banco de Dados: {e}")
+            return None
