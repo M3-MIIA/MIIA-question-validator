@@ -53,14 +53,6 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
 
         cake_recipe = """{"content":[{"answer": "Preparar um bolo de cenoura com cobertura de chocolate é uma prática culinária bastante comum nos lares brasileiros, sendo associada a momentos de convivência e simplicidade. A receita, apesar de tradicional, exige atenção a alguns detalhes para que o resultado final seja macio e saboroso.\n\nInicialmente, é necessário separar os ingredientes básicos, como cenouras, ovos, óleo, açúcar e farinha de trigo. As cenouras devem ser descascadas, cortadas em pedaços pequenos e batidas no liquidificador juntamente com os ovos e o óleo, até que se obtenha uma mistura homogênea. Em seguida, adiciona-se o açúcar e bate-se novamente, garantindo que todos os componentes estejam bem incorporados.\n\nApós esse processo, a mistura líquida deve ser transferida para um recipiente maior, no qual se acrescenta a farinha de trigo peneirada, mexendo-se cuidadosamente para evitar a formação de grumos. Por fim, adiciona-se o fermento químico em pó, misturando de forma delicada. A massa é então despejada em uma forma untada e levada ao forno preaquecido, onde deve assar até atingir consistência firme.\n\nEnquanto o bolo assa, pode-se preparar a cobertura, utilizando ingredientes simples como chocolate em pó, açúcar, manteiga e leite. Esses elementos devem ser levados ao fogo baixo, mexendo-se constantemente até formar uma calda lisa. Após retirar o bolo do forno, basta espalhar a cobertura ainda quente sobre a massa.\n\nDessa forma, o bolo de cenoura com chocolate destaca-se como uma receita prática e acessível, adequada tanto para o consumo cotidiano quanto para ocasiões especiais, demonstrando que a culinária pode ser, ao mesmo tempo, funcional e prazerosa."}]}"""
 
-        prompt_med = (
-            base_prompt +
-            "\n\nGere uma resposta INSATISFATÓRIA, com uma expectativa de um resultado menor que 75% por cento da pontuação máxima, dado os critérios avaliativos. "
-            "Para isso: NÃO atenda uma parcela significativa dos critérios de avaliação listados acima; "
-            "aborde o tema de forma superficial ou equivocada, sem demonstrar pleno conhecimento; "
-            "cometa poucos erros de escrita (erros gramaticias, de concortância); "
-            "a resposta deve ser simples e vaga, com argumentacao pertinente ao tema apesar da falta de profundidade."
-        )
         prompt_ruim = (
             base_prompt +
             "\n\nGere uma resposta RUIM, com uma expectativa de um resultado menor que 60 por cento da pontuação máxima, dado os critérios avaliativos. "
@@ -80,8 +72,16 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
 
         print("\n[2/5] Gerando respostas sintéticas...")
         ruim_answer = clientLLM.send_prompt(prompt_ruim)
-        med_answer  = clientLLM.send_prompt(prompt_med)
         max_answer  = clientLLM.send_prompt(prompt_max)
+
+        prompt_med = (
+            f"RESPOSTA RUIM:\n{ruim_answer}\n\n"
+            f"RESPOSTA EXCELENTE:\n{max_answer}\n\n"
+            f"Com base nessas duas respostas, MESCLE elas e gere uma resposta INTERMEDIÁRIA, sendo um pouco melhor que a resposta ruim mas claramente inferior à resposta excelente "
+            f"escreva com algus erros erros gramaticais e com estrutura menos refinada. "
+            f"me retorne UNICAMENTE UM JSON estruturado da seguinte forma: {{\"content\": [{{\"answer\": \"\"}}]}}. SEM ```json ... ```"
+        )
+        med_answer  = clientLLM.send_prompt(prompt_med)
 
         # --- Submissão para a API da MIIA ---
         print("\n[3/5] Submetendo respostas para correção...")
