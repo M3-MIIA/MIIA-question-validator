@@ -17,5 +17,5 @@ class SheetManager:
         self.aba = self.planilha.worksheet(self.nome_aba)              
 
 
-    def inserir_linha(self, valores_para_inserir):
-        pass
+    def insert_line(self, values):
+        self.aba.append_row(values)
