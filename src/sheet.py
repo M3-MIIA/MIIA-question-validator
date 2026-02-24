@@ -18,4 +18,5 @@ class SheetManager:
 
 
     def insert_line(self, values):
-        self.aba.append_row(values)
+        sanitized = [v if v is not None else "" for v in values]
+        self.aba.append_row(sanitized)

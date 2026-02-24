@@ -101,3 +101,47 @@ class Database:
         except Exception as e:
             print(f"Erro no Banco de Dados: {e}")
             return None
+
+
+    def ensure_tenant_question(self, integration_id):
+        """
+        Garante que o integration_id esteja vinculado ao tenant configurado em TENANT_ID.
+        Retorna True se já existia, False se foi inserido, None em caso de erro.
+        """
+        tenant_id = int(os.environ.get("TENANT_ID", 11))
+
+        check_query = """
+            SELECT id FROM tenant_question
+            WHERE tenant_id = %s AND integration_id = %s
+        """
+        get_question_id_query = """
+            SELECT id FROM question WHERE integration_id = %s::text LIMIT 1
+        """
+        insert_query = """
+            INSERT INTO tenant_question (tenant_id, question_id, integration_id, created_at, updated_at)
+            VALUES (%s, %s, %s, NOW(), NOW())
+            ON CONFLICT (tenant_id, integration_id) DO NOTHING
+        """
+
+        try:
+            with self.connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(check_query, (tenant_id, integration_id))
+                    if cur.fetchone():
+                        return True  # já existe
+
+                    cur.execute(get_question_id_query, (integration_id,))
+                    row = cur.fetchone()
+                    if not row:
+                        print(f"[PRÉ-VALIDAÇÃO] integration_id '{integration_id}' não encontrado na tabela question. Pulando inserção.")
+                        return None
+
+                    question_id = row[0]
+                    cur.execute(insert_query, (tenant_id, question_id, integration_id))
+                    conn.commit()
+                    print(f"[PRÉ-VALIDAÇÃO] Inserido tenant_question: tenant={tenant_id}, question_id={question_id}, integration_id={integration_id}")
+                    return False
+
+        except Exception as e:
+            print(f"[PRÉ-VALIDAÇÃO] Erro ao garantir tenant_question para '{integration_id}': {e}")
+            return None
