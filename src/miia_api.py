@@ -70,7 +70,7 @@ class MIIA_API:
                     print("-" * 40)
                     print(data_get)
                     print("-" * 40)
-                    break
+                    return data_get
 
                 elif current_status == "failed" or current_status == "error":
                     print(f"\n[Backend Error] Job failed internally: {data_get}")
