@@ -27,22 +27,11 @@ def collect_scores(client, jobs):
     return scores, last_assessment
 
 
-def main():
-    print("[1/5] Carregando variáveis de ambiente...")
-    load_dotenv()
+def run(integration_id, clientMIIA, clientLLM, database, sheets):
+    print(f"\n{'='*60}")
+    print(f"Processando integration_id: {integration_id}")
+    print(f"{'='*60}")
 
-    id_sheet = '1MuU9IjueKS0PXx7Dhs9pofS7I0glRZXn50Girq0SqIo'
-    tab_name = 'esteira'
-    path_google_json = './auth_google.json'
-
-    clientMIIA = miia_api.MIIA_API()
-    clientLLM = liteLLM.LiteLLMClient()
-    database = db.Database()
-    sheets = sheet.SheetManager(path_google_json, id_sheet, tab_name)
-
-    print("\n[Sucesso] Todos os conectores instanciados! O sistema está pronto.")
-
-    integration_id = "3566465"
     data = database.get_question_structure(integration_id)
     question_id = data["question_id"]
     statement = data["statement"]
@@ -53,10 +42,35 @@ def main():
 
     cake_recipe = """{"content":[{"answer": "Preparar um bolo de cenoura com cobertura de chocolate é uma prática culinária bastante comum nos lares brasileiros, sendo associada a momentos de convivência e simplicidade. A receita, apesar de tradicional, exige atenção a alguns detalhes para que o resultado final seja macio e saboroso.\n\nInicialmente, é necessário separar os ingredientes básicos, como cenouras, ovos, óleo, açúcar e farinha de trigo. As cenouras devem ser descascadas, cortadas em pedaços pequenos e batidas no liquidificador juntamente com os ovos e o óleo, até que se obtenha uma mistura homogênea. Em seguida, adiciona-se o açúcar e bate-se novamente, garantindo que todos os componentes estejam bem incorporados.\n\nApós esse processo, a mistura líquida deve ser transferida para um recipiente maior, no qual se acrescenta a farinha de trigo peneirada, mexendo-se cuidadosamente para evitar a formação de grumos. Por fim, adiciona-se o fermento químico em pó, misturando de forma delicada. A massa é então despejada em uma forma untada e levada ao forno preaquecido, onde deve assar até atingir consistência firme.\n\nEnquanto o bolo assa, pode-se preparar a cobertura, utilizando ingredientes simples como chocolate em pó, açúcar, manteiga e leite. Esses elementos devem ser levados ao fogo baixo, mexendo-se constantemente até formar uma calda lisa. Após retirar o bolo do forno, basta espalhar a cobertura ainda quente sobre a massa.\n\nDessa forma, o bolo de cenoura com chocolate destaca-se como uma receita prática e acessível, adequada tanto para o consumo cotidiano quanto para ocasiões especiais, demonstrando que a culinária pode ser, ao mesmo tempo, funcional e prazerosa."}]}"""
 
+    prompt_ruim = (
+        base_prompt +
+        "\n\nGere uma resposta RUIM que deve atingir MENOS DE 30% da nota máxima. "
+        "Para isso: NÃO atenda nenhum dos critérios de avaliação listados acima; "
+        "aborde o tema de forma completamente superficial ou equivocada, sem demonstrar conhecimento; "
+        "cometa erros graves de escrita (concordância, coesão, frases incompletas); "
+        "a resposta deve ser curta e vaga, sem argumentação ou fundamentação."
+    )
+    prompt_med = (
+        base_prompt +
+        "\n\nGere uma resposta MÉDIA que deve atingir ENTRE 30% E 70% da nota máxima. "
+        "Para isso: atenda PARCIALMENTE os critérios de avaliação — responda corretamente apenas metade deles "
+        "e ignore ou trate superficialmente os demais; "
+        "demonstre conhecimento básico do tema mas sem profundidade ou precisão; "
+        "cometa alguns erros de escrita moderados (pontuação, clareza), mas mantenha o texto compreensível."
+    )
+    prompt_max = (
+        base_prompt +
+        "\n\nGere uma resposta EXCELENTE E MÁXIMA que gabarite a questão, atingindo a nota mais alta possível. "
+        "Para isso: atenda TODOS os critérios de avaliação listados acima de forma completa, precisa e aprofundada; "
+        "demonstre domínio pleno do tema com argumentação sólida, bem fundamentada e exemplos pertinentes; "
+        "escreva com clareza, coesão e sem nenhum erro gramatical; "
+        "a resposta deve ser impecável, bem estruturada e tecnicamente perfeita em todos os pontos avaliados."
+    )
+
     print("\n[2/5] Gerando respostas sintéticas...")
-    ruim_answer = clientLLM.send_prompt(base_prompt + "\n\nProduza uma resposta que dado os critérios avaliativos, tire uma nota ruim, não respondendo adequadamente os critérios avaliativos e cometendo erros de escrita")
-    med_answer  = clientLLM.send_prompt(base_prompt + "\n\nProduza uma resposta que dado os critérios avaliativos, tire uma nota média, respondendo parcialmente os critérios avaliativos e cometendo alguns erros de escrita")
-    max_answer  = clientLLM.send_prompt(base_prompt + "\n\nProduza uma resposta que gabarite a questão, dados os critérios avaliativos, resultando em uma nota EXCELENTE/MÁXIMA, respondendo adequadamente os critérios avaliativos e sem erros de escrita")
+    ruim_answer = clientLLM.send_prompt(prompt_ruim)
+    med_answer  = clientLLM.send_prompt(prompt_med)
+    max_answer  = clientLLM.send_prompt(prompt_max)
 
     # --- Submissão para a API da MIIA ---
     print("\n[3/5] Submetendo respostas para correção...")
@@ -92,7 +106,24 @@ def main():
         max_score=max_score,
     )
     sheets.insert_line(row)
-    print("[Concluído] Linha inserida na planilha com sucesso.")
+    print(f"[Concluído] {integration_id} inserido na planilha com sucesso.")
+
+
+def main():
+    load_dotenv()
+
+    id_sheet = '1MuU9IjueKS0PXx7Dhs9pofS7I0glRZXn50Girq0SqIo'
+    tab_name = 'esteira'
+    path_google_json = './auth_google.json'
+
+    clientMIIA = miia_api.MIIA_API()
+    clientLLM = liteLLM.LiteLLMClient()
+    database = db.Database()
+    sheets = sheet.SheetManager(path_google_json, id_sheet, tab_name)
+
+    print("[Sucesso] Todos os conectores instanciados! O sistema está pronto.")
+
+    run("3566465", clientMIIA, clientLLM, database, sheets)
 
 
 if __name__ == "__main__":

@@ -35,10 +35,12 @@ class Database:
             g.name as grouping_name,
             c.code as classification_code,
             c.short_description,
+            c.long_description,
             cg.weight,
             cg.type,
             cg.eval_target,
-            cg.rigor_level,	
+            cg.rigor_level,
+            cg.user_context,
             cg.eval_mode as cls_eval_mode
         FROM question q
         LEFT JOIN question_item qi ON q.id = qi.question_id
@@ -51,7 +53,7 @@ class Database:
         LEFT JOIN job j ON qa.job_id = j.id
         WHERE q.integration_id = %s::text
         GROUP BY q.id, q.integration_id, q.statement, q.type, i.id, i.name, i.max_score, i.starts_max, i.eval_mode,
-                 g.id, g.name, c.id, c.code, c.short_description, cg.id, cg.weight, cg.type, cg.eval_target, cg.eval_mode
+                 g.id, g.name, c.id, c.code, c.short_description, c.long_description, cg.id, cg.weight, cg.type, cg.eval_target, cg.user_context, cg.eval_mode
         ORDER BY i.id, g.id, c.id;
         """
 
@@ -86,6 +88,8 @@ class Database:
                             "grouping_name": linha["grouping_name"],
                             "classification_code": linha["classification_code"],
                             "short_description": linha["short_description"],
+                            "long_description": linha["long_description"],
+                            "user_context": linha["user_context"],
                             "weight": float(linha["weight"]) if linha["weight"] else None,
                             "rigor_level": linha["rigor_level"]
                             # Adicione as outras colunas que julgar necessárias aqui
