@@ -44,7 +44,7 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets):
 
     prompt_ruim = (
         base_prompt +
-        "\n\nGere uma resposta RUIM que deve atingir MENOS DE 30% da nota máxima. "
+        "\n\nGere uma resposta RUIM que deve atingir MENOS DE 40% da nota máxima. "
         "Para isso: NÃO atenda nenhum dos critérios de avaliação listados acima; "
         "aborde o tema de forma completamente superficial ou equivocada, sem demonstrar conhecimento; "
         "cometa erros graves de escrita (concordância, coesão, frases incompletas); "
@@ -52,7 +52,7 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets):
     )
     prompt_med = (
         base_prompt +
-        "\n\nGere uma resposta MÉDIA que deve atingir ENTRE 30% E 70% da nota máxima. "
+        "\n\nGere uma resposta MÉDIA que deve atingir ENTRE 40% E 80% da nota máxima. "
         "Para isso: atenda PARCIALMENTE os critérios de avaliação — responda corretamente apenas metade deles "
         "e ignore ou trate superficialmente os demais; "
         "demonstre conhecimento básico do tema mas sem profundidade ou precisão; "
