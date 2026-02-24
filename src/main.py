@@ -21,8 +21,8 @@ def main():
 
     print(f"[Pipeline] {len(integration_ids)} questões na fila: {integration_ids}\n")
 
-    id_sheet = '1MuU9IjueKS0PXx7Dhs9pofS7I0glRZXn50Girq0SqIo'
-    tab_name = 'esteira'
+    id_sheet = os.environ.get("GOOGLE_SHEET_ID")
+    tab_name = os.environ.get("GOOGLE_SHEET_TAB")
     path_google_json = './auth_google.json'
 
     clientMIIA = miia_api.MIIA_API()

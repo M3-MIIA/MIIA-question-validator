@@ -1,3 +1,4 @@
+import os
 import db
 import liteLLM
 import miia_api
@@ -44,7 +45,7 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets):
 
     prompt_ruim = (
         base_prompt +
-        "\n\nGere uma resposta RUIM que deve atingir MENOS DE 40% da nota máxima. "
+        "\n\nGere uma resposta RUIM, de baixíssima qualidade. "
         "Para isso: NÃO atenda nenhum dos critérios de avaliação listados acima; "
         "aborde o tema de forma completamente superficial ou equivocada, sem demonstrar conhecimento; "
         "cometa erros graves de escrita (concordância, coesão, frases incompletas); "
@@ -52,7 +53,7 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets):
     )
     prompt_med = (
         base_prompt +
-        "\n\nGere uma resposta MÉDIA que deve atingir ENTRE 40% E 80% da nota máxima. "
+        "\n\nGere uma resposta MÉDIA, de qualidade intermediária. "
         "Para isso: atenda PARCIALMENTE os critérios de avaliação — responda corretamente apenas metade deles "
         "e ignore ou trate superficialmente os demais; "
         "demonstre conhecimento básico do tema mas sem profundidade ou precisão; "
@@ -112,8 +113,8 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets):
 def main():
     load_dotenv()
 
-    id_sheet = '1MuU9IjueKS0PXx7Dhs9pofS7I0glRZXn50Girq0SqIo'
-    tab_name = 'esteira'
+    id_sheet = os.environ.get("GOOGLE_SHEET_ID")
+    tab_name = os.environ.get("GOOGLE_SHEET_TAB")
     path_google_json = './auth_google.json'
 
     clientMIIA = miia_api.MIIA_API()
