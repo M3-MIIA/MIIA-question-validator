@@ -24,7 +24,8 @@ class Database:
 
     def get_question_structure(self, integration_id):
         query = """
-        SELECT 
+        SELECT
+            q.id as question_id,
             q.statement as question_statement,
             q.type as question_type,
             i.name as item_name,
@@ -71,6 +72,7 @@ class Database:
 
                     # Extrai os dados que são iguais para todas as linhas (pegamos da primeira linha [0])
                     dados_estruturados = {
+                        "question_id": linhas[0]["question_id"],
                         "statement": linhas[0]["question_statement"],
                         "type": linhas[0]["question_type"],
                         "criteria": []
