@@ -1,3 +1,5 @@
 .env
 auth_google.json
 src/__pycache__/**
+
+.uv.lock
