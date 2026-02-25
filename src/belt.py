@@ -18,11 +18,11 @@ def submit_n_times(client, integration_id, answer, n, delay=1):
     return jobs
 
 
-def collect_scores(client, jobs):
+def collect_scores(client, jobs, print_first=False):
     scores = []
     assessments = []
-    for job in jobs:
-        assessment = client.check_status(job)
+    for i, job in enumerate(jobs):
+        assessment = client.check_status(job, verbose=(print_first and i == 0))
         assessments.append(assessment)
         score = assessment["result"]["score"] if assessment else None
         scores.append(score)
@@ -81,15 +81,13 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
 
         prompt_med = (
             f"Veja o seguinte enunciado: {statement}, com os seguintes critérios de avaliação: {criteria}\n\n"
-            f"RESPOSTA DE REFERÊNCIA (nota baixa — ponto de partida, NÃO a copie):\n{ruim_answer}\n\n"
-            f"Melhore ligeiramente a resposta acima para gerar uma resposta MEDIANA, "
-            f"que deve obter entre 40% e 60% da pontuação máxima. "
-            f"REGRAS OBRIGATÓRIAS:\n"
-            f"- Aborde apenas 30% a 50% dos critérios de avaliação listados — escolha alguns e IGNORE completamente o restante\n"
-            f"- Os critérios que você abordar devem ser tratados de forma INCOMPLETA ou SUPERFICIAL\n"
-            f"- NÃO cite artigos de lei, normas técnicas, fundamentos legais ou termos técnicos específicos da área\n"
-            f"- NÃO proponha soluções ou encaminhamentos específicos — use apenas sugestões genéricas\n"
-            f"- Apresente argumentação fraca, sem exemplos concretos ou fundamentação sólida\n"
+            f"Gere uma resposta MEDIANA que deve obter entre 30% e 55% da pontuação máxima. "
+            f"REGRAS OBRIGATÓRIAS — siga à risca:\n"
+            f"- Aborde NO MÁXIMO 2 dos critérios de avaliação listados — ignore todos os demais completamente, mesmo que sejam centrais\n"
+            f"- Mesmo os 2 critérios escolhidos devem ser tratados de forma RASA e INCOMPLETA: cubra menos da metade do que seria esperado para cada um\n"
+            f"- NÃO demonstre domínio técnico: evite termos específicos da área, leis, normas, conceitos técnicos ou terminologia especializada\n"
+            f"- Use apenas afirmações genéricas, vagas e sem fundamentação — sem exemplos concretos, sem dados, sem embasamento\n"
+            f"- NÃO proponha soluções ou encaminhamentos específicos\n"
             f"- Cometa alguns erros gramaticais e use estrutura de texto pouco refinada\n"
             f"me retorne UNICAMENTE UM JSON estruturado da seguinte forma: {{\"content\": [{{\"answer\": \"\"}}]}}. SEM ```json ... ```"
         )
@@ -104,12 +102,12 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
 
         # --- Coleta dos resultados ---
         print("\n[4/5] Aguardando e coletando resultados...")
-        bolo_assessment = clientMIIA.check_status(bolo_job)
+        bolo_assessment = clientMIIA.check_status(bolo_job, verbose=False)
         bolo_score = bolo_assessment["result"]["score"] if bolo_assessment else None
 
-        ruim_scores, ruim_assessments = collect_scores(clientMIIA, ruim_jobs)
-        med_scores,  med_assessments  = collect_scores(clientMIIA, med_jobs)
-        max_scores,  max_assessments  = collect_scores(clientMIIA, max_jobs)
+        ruim_scores, ruim_assessments = collect_scores(clientMIIA, ruim_jobs, print_first=True)
+        med_scores,  med_assessments  = collect_scores(clientMIIA, med_jobs,  print_first=True)
+        max_scores,  max_assessments  = collect_scores(clientMIIA, max_jobs,  print_first=True)
 
         ref_assessment = bolo_assessment or (max_assessments[-1] if max_assessments else None)
         max_score = ref_assessment["result"]["max_score"] if ref_assessment else None

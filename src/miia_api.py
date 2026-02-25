@@ -41,13 +41,14 @@ class MIIA_API:
             exit(1)
 
 
-    def check_status(self, job_id):
+    def check_status(self, job_id, verbose=True):
         url_get = f"{self.base_url}/textual-corrections/v1/jobs/{job_id}"
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json"
         }
-        print(f"\n2. Starting Job status check (Polling)...")
+        if verbose:
+            print(f"\n2. Starting Job status check (Polling)...")
 
         max_try = 15
         interval_s = 4
@@ -61,15 +62,17 @@ class MIIA_API:
                 current_status = data_get.get("status")
 
                 if current_status == "running":
-                    print(f"   [{attempt}/{max_try}] Status: running. Waiting {interval_s}s...")
+                    if verbose:
+                        print(f"   [{attempt}/{max_try}] Status: running. Waiting {interval_s}s...")
                     time.sleep(interval_s)
                     continue
 
                 elif current_status == "completed" or current_status == "success":
-                    print("\n[Success] Processing completed!")
-                    print("-" * 40)
-                    print(data_get)
-                    print("-" * 40)
+                    if verbose:
+                        print("\n[Success] Processing completed!")
+                        print("-" * 40)
+                        print(data_get)
+                        print("-" * 40)
                     return data_get
 
                 elif current_status == "failed" or current_status == "error":
@@ -84,4 +87,5 @@ class MIIA_API:
                 print(f"\nNetwork failure during GET: {e}")
                 break
         else:
-            print("\n[Timeout] Maximum number of attempts reached. Job took too long.")
+            if verbose:
+                print("\n[Timeout] Maximum number of attempts reached. Job took too long.")
