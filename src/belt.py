@@ -55,11 +55,16 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
 
         prompt_ruim = (
             base_prompt +
-            "\n\nGere uma resposta RUIM, com uma expectativa de um resultado menor que 60 por cento da pontuação máxima, dado os critérios avaliativos. "
-            "Para isso: NÃO atenda quase nenhum dos critérios de avaliação listados acima; "
-            "aborde o tema de forma completamente superficial ou equivocada, sem demonstrar conhecimento; "
-            "cometa erros de escrita (concordância, coesão); "
-            "a resposta deve ser curta e vaga, sem argumentação ou fundamentação."
+            "\n\nGere uma resposta PÉSSIMA, com expectativa de obter menos de 30% da pontuação máxima. "
+            "REGRAS OBRIGATÓRIAS:\n"
+            "- NÃO atenda nenhum dos critérios de avaliação listados — ignore todos completamente\n"
+            "- NÃO demonstre nenhum conhecimento técnico ou específico sobre o tema\n"
+            "- Aborde o assunto de forma genérica e vaga, como alguém que nunca estudou o tema\n"
+            "- NÃO use termos técnicos, nomes de leis, políticas públicas, conceitos da área ou qualquer nomenclatura específica\n"
+            "- Cometa erros graves de escrita: concordância errada, frases incompletas, repetição de palavras\n"
+            "- A resposta deve ser muito curta (2 a 3 frases no máximo) e sem nenhuma argumentação\n"
+            "- NÃO proponha nenhuma solução, encaminhamento ou sugestão — apenas afirmações vagas e incorretas\n"
+            "- Demonstre completo desconhecimento do assunto."
         )
         prompt_max = (
             base_prompt +
@@ -75,13 +80,20 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
         max_answer  = clientLLM.send_prompt(prompt_max)
 
         prompt_med = (
-            f"RESPOSTA RUIM:\n{ruim_answer}\n\n"
-            f"RESPOSTA EXCELENTE:\n{max_answer}\n\n"
-            f"Com base nessas duas respostas, MESCLE elas e gere uma resposta INTERMEDIÁRIA, sendo um pouco melhor que a resposta ruim mas claramente inferior à resposta excelente "
-            f"escreva com algus erros erros gramaticais e com estrutura menos refinada. "
+            f"Veja o seguinte enunciado: {statement}, com os seguintes critérios de avaliação: {criteria}\n\n"
+            f"RESPOSTA DE REFERÊNCIA (nota baixa — ponto de partida, NÃO a copie):\n{ruim_answer}\n\n"
+            f"Melhore ligeiramente a resposta acima para gerar uma resposta MEDIANA, "
+            f"que deve obter entre 40% e 60% da pontuação máxima. "
+            f"REGRAS OBRIGATÓRIAS:\n"
+            f"- Aborde apenas 30% a 50% dos critérios de avaliação listados — escolha alguns e IGNORE completamente o restante\n"
+            f"- Os critérios que você abordar devem ser tratados de forma INCOMPLETA ou SUPERFICIAL\n"
+            f"- NÃO cite artigos de lei, normas técnicas, fundamentos legais ou termos técnicos específicos da área\n"
+            f"- NÃO proponha soluções ou encaminhamentos específicos — use apenas sugestões genéricas\n"
+            f"- Apresente argumentação fraca, sem exemplos concretos ou fundamentação sólida\n"
+            f"- Cometa alguns erros gramaticais e use estrutura de texto pouco refinada\n"
             f"me retorne UNICAMENTE UM JSON estruturado da seguinte forma: {{\"content\": [{{\"answer\": \"\"}}]}}. SEM ```json ... ```"
         )
-        med_answer  = clientLLM.send_prompt(prompt_med)
+        med_answer  = clientLLM.send_prompt(prompt_med, temperature=0.7)
 
         # --- Submissão para a API da MIIA ---
         print("\n[3/5] Submetendo respostas para correção...")

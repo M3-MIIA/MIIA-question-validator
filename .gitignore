@@ -5,4 +5,5 @@ auth_google.json
 src/__pycache__/**
 
 ids.txt
+ids-full.txt
 uv.lock
