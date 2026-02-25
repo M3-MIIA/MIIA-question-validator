@@ -1,9 +1,10 @@
 .env
 .venv/
-
+tools/
 auth_google.json
 src/__pycache__/**
 
 ids.txt
 ids-full.txt
+*.txt
 uv.lock

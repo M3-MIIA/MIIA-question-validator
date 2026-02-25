@@ -6,27 +6,17 @@ import miia_api
 import sheet
 import validator
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 
 
-def submit_n_times(client, integration_id, answer, n, delay=1):
+def submit_n_times(client, integration_id, answer, n, delay=0.5):
     jobs = []
     for _ in range(n):
         job = client.create_job(integration_id, answer)
         jobs.append(job)
         time.sleep(delay)
     return jobs
-
-
-def collect_scores(client, jobs, print_first=False):
-    scores = []
-    assessments = []
-    for i, job in enumerate(jobs):
-        assessment = client.check_status(job, verbose=(print_first and i == 0))
-        assessments.append(assessment)
-        score = assessment["result"]["score"] if assessment else None
-        scores.append(score)
-    return scores, assessments
 
 
 def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None):
@@ -55,16 +45,25 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
 
         prompt_ruim = (
             base_prompt +
-            "\n\nGere uma resposta PÉSSIMA, com expectativa de obter menos de 30% da pontuação máxima. "
+            "\n\nGere uma resposta RUIM que deve obter menos de 35% da pontuação máxima. "
             "REGRAS OBRIGATÓRIAS:\n"
-            "- NÃO atenda nenhum dos critérios de avaliação listados — ignore todos completamente\n"
-            "- NÃO demonstre nenhum conhecimento técnico ou específico sobre o tema\n"
-            "- Aborde o assunto de forma genérica e vaga, como alguém que nunca estudou o tema\n"
-            "- NÃO use termos técnicos, nomes de leis, políticas públicas, conceitos da área ou qualquer nomenclatura específica\n"
-            "- Cometa erros graves de escrita: concordância errada, frases incompletas, repetição de palavras\n"
-            "- A resposta deve ser muito curta (2 a 3 frases no máximo) e sem nenhuma argumentação\n"
-            "- NÃO proponha nenhuma solução, encaminhamento ou sugestão — apenas afirmações vagas e incorretas\n"
-            "- Demonstre completo desconhecimento do assunto."
+            "- Trate o tema de forma completamente superficial, como alguém que tem noção vaga do assunto mas não estudou\n"
+            "- NÃO atenda nenhum dos critérios de avaliação de forma satisfatória — mencione o tema mas sem profundidade\n"
+            "- NÃO use termos técnicos, leis, normas, conceitos específicos da área ou nomenclatura especializada\n"
+            "- Use apenas afirmações genéricas e senso comum — sem dados, exemplos, embasamento ou fundamentação\n"
+            "- NÃO proponha soluções ou encaminhamentos concretos\n"
+            "- Escreva com alguns erros de coesão e argumentação fraca, mas de forma legível"
+        )
+        prompt_med = (
+            base_prompt +
+            "\n\nGere uma resposta MEDIANA que deve obter entre 35% e 65% da pontuação máxima. "
+            "REGRAS OBRIGATÓRIAS — siga à risca:\n"
+            "- Aborde entre 30% e 50% dos critérios de avaliação listados — ignore os demais completamente\n"
+            "- Mesmo os critérios abordados devem ser tratados de forma RASA e INCOMPLETA: cubra menos da metade do esperado para cada um\n"
+            "- NÃO demonstre domínio técnico: evite termos específicos, leis, normas, conceitos técnicos ou terminologia especializada\n"
+            "- Use apenas afirmações genéricas, vagas e sem fundamentação — sem exemplos concretos, sem dados\n"
+            "- NÃO proponha soluções ou encaminhamentos específicos\n"
+            "- Cometa alguns erros gramaticais e use estrutura de texto pouco refinada"
         )
         prompt_max = (
             base_prompt +
@@ -76,38 +75,46 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
         )
 
         print("\n[2/5] Gerando respostas sintéticas...")
-        ruim_answer = clientLLM.send_prompt(prompt_ruim)
-        max_answer  = clientLLM.send_prompt(prompt_max)
-
-        prompt_med = (
-            f"Veja o seguinte enunciado: {statement}, com os seguintes critérios de avaliação: {criteria}\n\n"
-            f"Gere uma resposta MEDIANA que deve obter entre 30% e 55% da pontuação máxima. "
-            f"REGRAS OBRIGATÓRIAS — siga à risca:\n"
-            f"- Aborde NO MÁXIMO 2 dos critérios de avaliação listados — ignore todos os demais completamente, mesmo que sejam centrais\n"
-            f"- Mesmo os 2 critérios escolhidos devem ser tratados de forma RASA e INCOMPLETA: cubra menos da metade do que seria esperado para cada um\n"
-            f"- NÃO demonstre domínio técnico: evite termos específicos da área, leis, normas, conceitos técnicos ou terminologia especializada\n"
-            f"- Use apenas afirmações genéricas, vagas e sem fundamentação — sem exemplos concretos, sem dados, sem embasamento\n"
-            f"- NÃO proponha soluções ou encaminhamentos específicos\n"
-            f"- Cometa alguns erros gramaticais e use estrutura de texto pouco refinada\n"
-            f"me retorne UNICAMENTE UM JSON estruturado da seguinte forma: {{\"content\": [{{\"answer\": \"\"}}]}}. SEM ```json ... ```"
-        )
-        med_answer  = clientLLM.send_prompt(prompt_med, temperature=0.7)
+        with ThreadPoolExecutor(max_workers=3) as exc:
+            f_ruim = exc.submit(clientLLM.send_prompt, prompt_ruim)
+            f_med  = exc.submit(clientLLM.send_prompt, prompt_med)
+            f_max  = exc.submit(clientLLM.send_prompt, prompt_max)
+        ruim_answer = f_ruim.result()
+        med_answer  = f_med.result()
+        max_answer  = f_max.result()
 
         # --- Submissão para a API da MIIA ---
         print("\n[3/5] Submetendo respostas para correção...")
-        bolo_job  = submit_n_times(clientMIIA, integration_id, cake_recipe, n=1)[0]
-        ruim_jobs = submit_n_times(clientMIIA, integration_id, ruim_answer, n=3)
-        med_jobs  = submit_n_times(clientMIIA, integration_id, med_answer,  n=3)
-        max_jobs  = submit_n_times(clientMIIA, integration_id, max_answer,  n=3)
+        with ThreadPoolExecutor(max_workers=4) as exc:
+            f_bolo = exc.submit(submit_n_times, clientMIIA, integration_id, cake_recipe, 1)
+            f_ruim = exc.submit(submit_n_times, clientMIIA, integration_id, ruim_answer, 3)
+            f_med  = exc.submit(submit_n_times, clientMIIA, integration_id, med_answer,  3)
+            f_max  = exc.submit(submit_n_times, clientMIIA, integration_id, max_answer,  3)
+        bolo_job  = f_bolo.result()[0]
+        ruim_jobs = f_ruim.result()
+        med_jobs  = f_med.result()
+        max_jobs  = f_max.result()
 
         # --- Coleta dos resultados ---
         print("\n[4/5] Aguardando e coletando resultados...")
-        bolo_assessment = clientMIIA.check_status(bolo_job, verbose=False)
-        bolo_score = bolo_assessment["result"]["score"] if bolo_assessment else None
+        all_jobs = [bolo_job] + ruim_jobs + med_jobs + max_jobs
 
-        ruim_scores, ruim_assessments = collect_scores(clientMIIA, ruim_jobs, print_first=True)
-        med_scores,  med_assessments  = collect_scores(clientMIIA, med_jobs,  print_first=True)
-        max_scores,  max_assessments  = collect_scores(clientMIIA, max_jobs,  print_first=True)
+        def _check_job(args):
+            idx, job = args
+            return idx, clientMIIA.check_status(job, verbose=False)
+
+        with ThreadPoolExecutor(max_workers=len(all_jobs)) as exc:
+            all_results = dict(exc.map(_check_job, enumerate(all_jobs)))
+
+        bolo_assessment  = all_results[0]
+        ruim_assessments = [all_results[i] for i in range(1, 4)]
+        med_assessments  = [all_results[i] for i in range(4, 7)]
+        max_assessments  = [all_results[i] for i in range(7, 10)]
+
+        bolo_score  = bolo_assessment["result"]["score"] if bolo_assessment else None
+        ruim_scores = [a["result"]["score"] if a else None for a in ruim_assessments]
+        med_scores  = [a["result"]["score"] if a else None for a in med_assessments]
+        max_scores  = [a["result"]["score"] if a else None for a in max_assessments]
 
         ref_assessment = bolo_assessment or (max_assessments[-1] if max_assessments else None)
         max_score = ref_assessment["result"]["max_score"] if ref_assessment else None

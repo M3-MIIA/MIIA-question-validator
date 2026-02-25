@@ -36,27 +36,27 @@ class Validator:
 
 
     def pass_min_score(self, ruim_scores, max_score):
-        """True if median(ruim) < 35% of max_score."""
-        median = self._safe_median(ruim_scores)
-        if median is None or not max_score:
+        """True if mean(ruim) < 35% of max_score."""
+        mean = self._safe_mean(ruim_scores)
+        if mean is None or not max_score:
             return None
-        return median < 0.35 * max_score
+        return mean < 0.35 * max_score
 
 
     def pass_med_score(self, med_scores, max_score):
-        """True if 35% <= median(med) <= 75% of max_score."""
-        median = self._safe_median(med_scores)
-        if median is None or not max_score:
+        """True if 35% <= mean(med) <= 80% of max_score."""
+        mean = self._safe_mean(med_scores)
+        if mean is None or not max_score:
             return None
-        return 0.35 * max_score <= median <= 0.75 * max_score
+        return 0.35 * max_score <= mean <= 0.80 * max_score
 
 
     def pass_max_score(self, max_scores, max_score):
-        """True if median(max) > 75% of max_score."""
-        median = self._safe_median(max_scores)
-        if median is None or not max_score:
+        """True if mean(max) > 80% of max_score."""
+        mean = self._safe_mean(max_scores)
+        if mean is None or not max_score:
             return None
-        return median > 0.75 * max_score
+        return mean > 0.80 * max_score
 
 
     def build_row(self, question_id, integration_id, bolo_score,

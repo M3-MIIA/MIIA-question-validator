@@ -50,8 +50,8 @@ class MIIA_API:
         if verbose:
             print(f"\n2. Starting Job status check (Polling)...")
 
-        max_try = 15
-        interval_s = 4
+        max_try = 30
+        interval_s = 2
 
         for attempt in range(1, max_try + 1):
             try:
