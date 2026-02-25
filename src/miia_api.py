@@ -50,8 +50,8 @@ class MIIA_API:
         if verbose:
             print(f"\n2. Starting Job status check (Polling)...")
 
-        max_try = 30
-        interval_s = 2
+        max_try = 60
+        interval_s = 3
 
         for attempt in range(1, max_try + 1):
             try:
@@ -76,16 +76,15 @@ class MIIA_API:
                     return data_get
 
                 elif current_status == "failed" or current_status == "error":
-                    print(f"\n[Backend Error] Job failed internally: {data_get}")
+                    print(f"\n[Backend Error] Job {job_id} failed: {data_get}")
                     break
 
                 else:
-                    print(f"\n[Warning] Unknown status returned: '{current_status}'. Full response: {data_get}")
+                    print(f"\n[Warning] Job {job_id} unknown status: '{current_status}'. Response: {data_get}")
                     break
 
             except requests.exceptions.RequestException as e:
-                print(f"\nNetwork failure during GET: {e}")
+                print(f"\nNetwork failure during GET for job {job_id}: {e}")
                 break
         else:
-            if verbose:
-                print("\n[Timeout] Maximum number of attempts reached. Job took too long.")
+            print(f"\n[Timeout] Job {job_id} não completou em {max_try * interval_s}s.")

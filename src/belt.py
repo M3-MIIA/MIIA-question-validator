@@ -47,23 +47,22 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
             base_prompt +
             "\n\nGere uma resposta RUIM que deve obter menos de 35% da pontuação máxima. "
             "REGRAS OBRIGATÓRIAS:\n"
-            "- Trate o tema de forma completamente superficial, como alguém que tem noção vaga do assunto mas não estudou\n"
+            "- Trate o tema de forma superficial, como alguém que tem noção vaga do assunto mas não estudou\n"
             "- NÃO atenda nenhum dos critérios de avaliação de forma satisfatória — mencione o tema mas sem profundidade\n"
             "- NÃO use termos técnicos, leis, normas, conceitos específicos da área ou nomenclatura especializada\n"
             "- Use apenas afirmações genéricas e senso comum — sem dados, exemplos, embasamento ou fundamentação\n"
-            "- NÃO proponha soluções ou encaminhamentos concretos\n"
             "- Escreva com alguns erros de coesão e argumentação fraca, mas de forma legível"
+            "- Apesar disso, segundo os critérios de correcão a resposta deve tentar NÃO ZERAR, pontuando pouco, mas pontuando em algum critério avaliativo"
         )
         prompt_med = (
             base_prompt +
-            "\n\nGere uma resposta MEDIANA que deve obter entre 35% e 65% da pontuação máxima. "
+            "\n\nGere uma resposta MEDIANA que deve obter entre uma nota próxima a metade do máximo disponível. "
             "REGRAS OBRIGATÓRIAS — siga à risca:\n"
-            "- Aborde entre 30% e 50% dos critérios de avaliação listados — ignore os demais completamente\n"
-            "- Mesmo os critérios abordados devem ser tratados de forma RASA e INCOMPLETA: cubra menos da metade do esperado para cada um\n"
-            "- NÃO demonstre domínio técnico: evite termos específicos, leis, normas, conceitos técnicos ou terminologia especializada\n"
-            "- Use apenas afirmações genéricas, vagas e sem fundamentação — sem exemplos concretos, sem dados\n"
-            "- NÃO proponha soluções ou encaminhamentos específicos\n"
-            "- Cometa alguns erros gramaticais e use estrutura de texto pouco refinada"
+            "- Aborde entre 30% e 60% dos critérios de avaliação listados — ignore os demais completamente\n"
+            "- Mesmo os critérios abordados devem ser tratados de forma SIMPLES e OBJETIVA: cubra menos da metade do esperado para cada um\n"
+            "- Demonstre domínio técnico básico: evite termos MUITO específicos\n"
+            "- Use apenas afirmações genéricas, vagas e com poucos exemplos concretos, mas mantenha uma linguagem simples e textualmente correto\n"
+            "- Cometa poucos erros gramaticais e use estrutura de texto funcional e objetiva, mas sem grande refiamento estrutural ou estilístico"
         )
         prompt_max = (
             base_prompt +
@@ -101,6 +100,7 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
 
         def _check_job(args):
             idx, job = args
+            time.sleep(idx * 0.5)
             return idx, clientMIIA.check_status(job, verbose=False)
 
         with ThreadPoolExecutor(max_workers=len(all_jobs)) as exc:
