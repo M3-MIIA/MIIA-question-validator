@@ -10,6 +10,99 @@ from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 
 
+def _build_criteria_instructions(criteria):
+    """
+    Builds a contextual instruction block based on criteria metadata.
+    Returns a dict with keys 'ruim', 'med', 'max' containing specific guidance strings.
+    """
+    binary_occurrence = sorted(
+        [c for c in criteria if (c.get("type") or "").upper() == "BINARY"
+         and (c.get("eval_target") or "").upper() == "OCCURRENCE"
+         and c.get("weight") and c["weight"] > 0],
+        key=lambda c: c["weight"], reverse=True
+    )
+    deviation_criteria = [
+        c for c in criteria
+        if (c.get("eval_target") or "").upper() == "DEVIATION"
+        or (c.get("weight") and c["weight"] < 0)
+    ]
+    quantitative_criteria = [
+        c for c in criteria if (c.get("type") or "").upper() == "QUANTITATIVE"
+    ]
+    high_rigor = [
+        c for c in criteria
+        if (c.get("rigor_level") or "").upper() in ("HIGH", "VERY_HIGH")
+    ]
+
+    binary_top = binary_occurrence[:3]
+    binary_rest = binary_occurrence[3:]
+
+    lines_ruim = []
+    lines_med = []
+    lines_max = []
+
+    if binary_occurrence:
+        top_descs = "; ".join(f'"{c["short_description"]}"' for c in binary_top)
+        rest_descs = "; ".join(f'"{c["short_description"]}"' for c in binary_rest) if binary_rest else None
+        all_descs = "; ".join(c["short_description"] for c in binary_occurrence)
+
+        lines_ruim.append(
+            f"- Os critérios a seguir são BINÁRIOS (o corretos verifica se o conceito foi mencionado ou não). "
+            f"Para uma resposta RUIM, NÃO mencione NENHUM deles: {all_descs}."
+        )
+        lines_med.append(
+            f"- Os critérios a seguir são BINÁRIOS. Para uma resposta MEDIANA, mencione APENAS os de maior peso: {top_descs}."
+            + (f" Ignore completamente: {rest_descs}." if rest_descs else "")
+        )
+        lines_max.append(
+            f"- Os critérios a seguir são BINÁRIOS. Para uma resposta MÁXIMA, mencione TODOS explicitamente: "
+            f"{all_descs}."
+        )
+
+    if deviation_criteria:
+        dev_descs = "; ".join(c["short_description"] for c in deviation_criteria)
+        lines_ruim.append(
+            f"- Os critérios a seguir são de PENALIZAÇÃO (erros subtraem pontos). "
+            f"Para uma resposta RUIM, provoque intencionalmente essas falhas: {dev_descs}."
+        )
+        lines_med.append(
+            f"- Critérios de penalização: evite as seguintes falhas para não perder pontos: {dev_descs}."
+        )
+        lines_max.append(
+            f"- Critérios de penalização: evite completamente: {dev_descs}."
+        )
+
+    if quantitative_criteria:
+        lines_ruim.append(
+            "- Há critérios QUANTITATIVOS de linguagem/estrutura: cometa vários erros gramaticais, de coesão e estrutura textual."
+        )
+        lines_med.append(
+            "- Há critérios QUANTITATIVOS de linguagem/estrutura: cometa apenas poucos erros gramaticais ou de coesão."
+        )
+        lines_max.append(
+            "- Há critérios QUANTITATIVOS de linguagem/estrutura: texto impecável, sem nenhum erro gramatical ou de coesão."
+        )
+
+    if high_rigor:
+        lines_max.append(
+            "- Alguns critérios têm rigor HIGH ou VERY_HIGH: seja extremamente preciso e técnico, use terminologia específica."
+        )
+        lines_med.append(
+            "- Alguns critérios têm rigor HIGH: demonstre conhecimento moderado, sem ser vago demais."
+        )
+
+    def _fmt(lines):
+        if not lines:
+            return ""
+        return "\n\nINSTRUÇÕES ADICIONAIS BASEADAS NOS CRITÉRIOS DE AVALIAÇÃO:\n" + "\n".join(lines)
+
+    return {
+        "ruim": _fmt(lines_ruim),
+        "med":  _fmt(lines_med),
+        "max":  _fmt(lines_max),
+    }
+
+
 def submit_n_times(client, integration_id, answer, n, delay=0.5):
     jobs = []
     for _ in range(n):
@@ -41,6 +134,8 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
         # --- Geração das respostas sintéticas ---
         base_prompt = f""" Veja o seguinte enunciado: {statement}, que possui os seguintes critérios de avaliacao: {criteria}, me retorne UNICAMENTE UM JSON estruturado da seguinte forma: {{"content": [{{"answer": ""}}]}}. SEM ```json ... ```"""
 
+        criteria_hints = _build_criteria_instructions(criteria)
+
         cake_recipe = """{"content":[{"answer": "Preparar um bolo de cenoura com cobertura de chocolate é uma prática culinária bastante comum nos lares brasileiros, sendo associada a momentos de convivência e simplicidade. A receita, apesar de tradicional, exige atenção a alguns detalhes para que o resultado final seja macio e saboroso.\n\nInicialmente, é necessário separar os ingredientes básicos, como cenouras, ovos, óleo, açúcar e farinha de trigo. As cenouras devem ser descascadas, cortadas em pedaços pequenos e batidas no liquidificador juntamente com os ovos e o óleo, até que se obtenha uma mistura homogênea. Em seguida, adiciona-se o açúcar e bate-se novamente, garantindo que todos os componentes estejam bem incorporados.\n\nApós esse processo, a mistura líquida deve ser transferida para um recipiente maior, no qual se acrescenta a farinha de trigo peneirada, mexendo-se cuidadosamente para evitar a formação de grumos. Por fim, adiciona-se o fermento químico em pó, misturando de forma delicada. A massa é então despejada em uma forma untada e levada ao forno preaquecido, onde deve assar até atingir consistência firme.\n\nEnquanto o bolo assa, pode-se preparar a cobertura, utilizando ingredientes simples como chocolate em pó, açúcar, manteiga e leite. Esses elementos devem ser levados ao fogo baixo, mexendo-se constantemente até formar uma calda lisa. Após retirar o bolo do forno, basta espalhar a cobertura ainda quente sobre a massa.\n\nDessa forma, o bolo de cenoura com chocolate destaca-se como uma receita prática e acessível, adequada tanto para o consumo cotidiano quanto para ocasiões especiais, demonstrando que a culinária pode ser, ao mesmo tempo, funcional e prazerosa."}]}"""
 
         prompt_ruim = (
@@ -51,18 +146,20 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
             "- NÃO atenda nenhum dos critérios de avaliação de forma satisfatória — mencione o tema mas sem profundidade\n"
             "- NÃO use termos técnicos, leis, normas, conceitos específicos da área ou nomenclatura especializada\n"
             "- Use apenas afirmações genéricas e senso comum — sem dados, exemplos, embasamento ou fundamentação\n"
-            "- Escreva com alguns erros de coesão e argumentação fraca, mas de forma legível"
-            "- Apesar disso, segundo os critérios de correcão a resposta deve tentar NÃO ZERAR, pontuando pouco, mas pontuando em algum critério avaliativo"
+            "- Escreva com alguns erros de coesão e argumentação fraca, mas de forma legível\n"
+            "- Apesar disso, segundo os critérios de correção a resposta deve tentar NÃO ZERAR, pontuando pouco, mas pontuando em algum critério avaliativo"
+            + criteria_hints["ruim"]
         )
         prompt_med = (
             base_prompt +
-            "\n\nGere uma resposta MEDIANA que deve obter entre uma nota próxima a metade do máximo disponível. "
+            "\n\nGere uma resposta MEDIANA que deve obter uma nota próxima a metade do máximo disponível. "
             "REGRAS OBRIGATÓRIAS — siga à risca:\n"
             "- Aborde entre 30% e 60% dos critérios de avaliação listados — ignore os demais completamente\n"
             "- Mesmo os critérios abordados devem ser tratados de forma SIMPLES e OBJETIVA: cubra menos da metade do esperado para cada um\n"
             "- Demonstre domínio técnico básico: evite termos MUITO específicos\n"
-            "- Use apenas afirmações genéricas, vagas e com poucos exemplos concretos, mas mantenha uma linguagem simples e textualmente correto\n"
-            "- Cometa poucos erros gramaticais e use estrutura de texto funcional e objetiva, mas sem grande refiamento estrutural ou estilístico"
+            "- Use apenas afirmações genéricas, vagas e com poucos exemplos concretos, mas mantenha uma linguagem simples e textualmente correta\n"
+            "- Cometa poucos erros gramaticais e use estrutura de texto funcional e objetiva, mas sem grande refinamento estrutural ou estilístico"
+            + criteria_hints["med"]
         )
         prompt_max = (
             base_prompt +
@@ -71,6 +168,7 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
             "demonstre domínio pleno do tema com argumentação sólida, bem fundamentada e exemplos pertinentes; "
             "escreva com clareza, coesão e sem nenhum erro gramatical; "
             "a resposta deve ser impecável, bem estruturada e tecnicamente perfeita em todos os pontos avaliados."
+            + criteria_hints["max"]
         )
 
         print("\n[2/5] Gerando respostas sintéticas...")
