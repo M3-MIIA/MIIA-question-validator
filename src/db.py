@@ -91,8 +91,10 @@ class Database:
                             "long_description": linha["long_description"],
                             "user_context": linha["user_context"],
                             "weight": float(linha["weight"]) if linha["weight"] else None,
-                            "rigor_level": linha["rigor_level"]
-                            # Adicione as outras colunas que julgar necessárias aqui
+                            "type": linha["type"],
+                            "eval_target": linha["eval_target"],
+                            "eval_mode": linha["cls_eval_mode"],
+                            "rigor_level": linha["rigor_level"],
                         }
                         dados_estruturados["criteria"].append(criterio)
 

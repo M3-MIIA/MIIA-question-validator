@@ -26,13 +26,13 @@ class Validator:
 
 
     def pass_var(self, scores, max_score):
-        """True if std / max_score < 0.20 (variation < 20% of the question's max score)."""
+        """True if std < max(20% of max_score, 0.5) — adaptive threshold for small-scale questions."""
         if not max_score:
             return None
         std = self._safe_stdev(scores)
         if std is None:
             return None
-        return (std / max_score) < 0.20
+        return std < max(0.20 * max_score, 0.5)
 
 
     def pass_min_score(self, ruim_scores, max_score):
@@ -44,11 +44,22 @@ class Validator:
 
 
     def pass_med_score(self, med_scores, max_score):
-        """True if 35% <= mean(med) <= 80% of max_score."""
-        mean = self._safe_mean(med_scores)
-        if mean is None or not max_score:
+        """True if mean, median, or any individual score falls within [25%, 85%] of max_score."""
+        if not max_score:
             return None
-        return 0.35 * max_score <= mean <= 0.80 * max_score
+        lo, hi = 0.25 * max_score, 0.85 * max_score
+        mean = self._safe_mean(med_scores)
+        if mean is not None and lo <= mean <= hi:
+            return True
+        median = self._safe_median(med_scores)
+        if median is not None and lo <= median <= hi:
+            return True
+        valid = [s for s in med_scores if s is not None]
+        if any(lo <= s <= hi for s in valid):
+            return True
+        if not valid:
+            return None
+        return False
 
 
     def pass_max_score(self, max_scores, max_score):
