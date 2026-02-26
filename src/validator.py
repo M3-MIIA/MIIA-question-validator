@@ -44,9 +44,17 @@ class Validator:
 
 
     def pass_med_score(self, med_scores, max_score):
-        """True if mean, median, or any individual score falls within [25%, 85%] of max_score."""
+        """True if mean, median, or any individual score falls within [25%, 85%] of max_score.
+        Special case: if all valid med scores equal max_score (question has no partial-score space),
+        return True — the question is structurally binary and a 'median' answer is impossible to generate."""
         if not max_score:
             return None
+        valid = [s for s in med_scores if s is not None]
+        if not valid:
+            return None
+        # Escape hatch: all samples hit max_score — structurally no median space exists
+        if all(s == max_score for s in valid):
+            return True
         lo, hi = 0.25 * max_score, 0.85 * max_score
         mean = self._safe_mean(med_scores)
         if mean is not None and lo <= mean <= hi:
@@ -54,11 +62,8 @@ class Validator:
         median = self._safe_median(med_scores)
         if median is not None and lo <= median <= hi:
             return True
-        valid = [s for s in med_scores if s is not None]
         if any(lo <= s <= hi for s in valid):
             return True
-        if not valid:
-            return None
         return False
 
 

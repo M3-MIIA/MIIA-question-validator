@@ -10,6 +10,22 @@ from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 
 
+_LEGAL_PIECE_KEYWORDS = (
+    "adi", "adpf", "adin", "ação direta", "ação declaratória", "adco",
+    "habeas corpus", "mandado de segurança", "mandado de injunção",
+    "recurso extraordinário", "recurso especial", "petição", "peça jurídica",
+    "apelação", "agravo", "embargos", "reclamação constitucional",
+    "impetrar", "impugnar", "propor ação", "ajuizar",
+)
+
+def _is_legal_piece(criteria):
+    """Returns True if the question likely requires a formal legal document."""
+    codes = " ".join((c.get("classification_code") or "").lower() for c in criteria)
+    descs = " ".join((c.get("short_description") or "").lower() for c in criteria)
+    combined = codes + " " + descs
+    return any(kw in combined for kw in _LEGAL_PIECE_KEYWORDS)
+
+
 def _build_criteria_instructions(criteria):
     """
     Builds a contextual instruction block based on criteria metadata.
@@ -34,29 +50,62 @@ def _build_criteria_instructions(criteria):
         if (c.get("rigor_level") or "").upper() in ("HIGH", "VERY_HIGH")
     ]
 
-    binary_top = binary_occurrence[:3]
-    binary_rest = binary_occurrence[3:]
+    # Top half by weight for med; rest ignored
+    mid = max(1, len(binary_occurrence) // 2)
+    binary_top = binary_occurrence[:mid]
+    binary_rest = binary_occurrence[mid:]
 
     lines_ruim = []
     lines_med = []
     lines_max = []
 
-    if binary_occurrence:
+    # --- Grupo A: peça jurídica formal ---
+    if _is_legal_piece(criteria):
+        all_descs = "; ".join(c["short_description"] for c in binary_occurrence)
         top_descs = "; ".join(f'"{c["short_description"]}"' for c in binary_top)
         rest_descs = "; ".join(f'"{c["short_description"]}"' for c in binary_rest) if binary_rest else None
+
+        lines_ruim.append(
+            "- ATENÇÃO: esta questão exige a redação de uma PEÇA JURÍDICA FORMAL (petição, recurso, ação constitucional, etc.). "
+            "Para uma resposta RUIM, escreva um texto dissertativo genérico sobre o tema jurídico, "
+            "SEM estrutura de petição (sem endereçamento, sem qualificação das partes, sem pedido formal, sem fundamentos legais específicos). "
+            "Não cite artigos de lei nem ações constitucionais pelo nome correto."
+        )
+        lines_med.append(
+            "- ATENÇÃO: esta questão exige a redação de uma PEÇA JURÍDICA FORMAL. "
+            "Para uma resposta MEDIANA, escreva a peça com estrutura básica (endereçamento, qualificação, pedido), "
+            "mas aborde com profundidade apenas os seguintes critérios de maior peso: "
+            + top_descs + ". "
+            + (f"Ignore completamente: {rest_descs}. " if rest_descs else "")
+            + "Mencione os artigos constitucionais relevantes dos critérios abordados, mas sem explorar todos os fundamentos."
+        )
+        lines_max.append(
+            "- ATENÇÃO: esta questão exige a redação de uma PEÇA JURÍDICA FORMAL completa e tecnicamente perfeita. "
+            "Inclua: endereçamento correto, qualificação das partes, legitimidade ativa, competência, "
+            "fundamentos de mérito com artigos específicos da CRFB/88 e legislação aplicável, pedido cautelar (se cabível) e pedido principal. "
+            "Critérios que DEVEM ser cobertos explicitamente: " + all_descs + "."
+        )
+
+    elif binary_occurrence:
+        # --- Grupos B/C: questões dissertativas comuns ---
         all_descs = "; ".join(c["short_description"] for c in binary_occurrence)
+        top_descs = "; ".join(f'"{c["short_description"]}"' for c in binary_top)
+        rest_descs = "; ".join(f'"{c["short_description"]}"' for c in binary_rest) if binary_rest else None
 
         lines_ruim.append(
             f"- Os critérios a seguir são BINÁRIOS (o corretos verifica se o conceito foi mencionado ou não). "
-            f"Para uma resposta RUIM, NÃO mencione NENHUM deles: {all_descs}."
+            f"Para uma resposta RUIM, NÃO mencione NENHUM deles diretamente: {all_descs}. "
+            f"Fale sobre o tema de forma vaga e genérica, sem nomear conceitos, leis ou artigos específicos."
         )
         lines_med.append(
-            f"- Os critérios a seguir são BINÁRIOS. Para uma resposta MEDIANA, mencione APENAS os de maior peso: {top_descs}."
-            + (f" Ignore completamente: {rest_descs}." if rest_descs else "")
+            f"- Os critérios a seguir são BINÁRIOS. Para uma resposta MEDIANA, mencione com clareza "
+            f"ao menos metade deles, priorizando os de maior peso: {top_descs}. "
+            + (f"Ignore completamente: {rest_descs}. " if rest_descs else "")
+            + "Para os critérios que mencionar, use os termos técnicos corretos mas sem aprofundamento excessivo."
         )
         lines_max.append(
-            f"- Os critérios a seguir são BINÁRIOS. Para uma resposta MÁXIMA, mencione TODOS explicitamente: "
-            f"{all_descs}."
+            f"- Os critérios a seguir são BINÁRIOS. Para uma resposta MÁXIMA, mencione TODOS explicitamente "
+            f"com precisão técnica e fundamentação: {all_descs}."
         )
 
     if deviation_criteria:
@@ -89,6 +138,16 @@ def _build_criteria_instructions(criteria):
         )
         lines_med.append(
             "- Alguns critérios têm rigor HIGH: demonstre conhecimento moderado, sem ser vago demais."
+        )
+
+    # --- Grupo C: lista explícita de critérios com peso para o prompt_max ---
+    if binary_occurrence:
+        weighted_list = "\n".join(
+            f"  * [{c['weight']}pt] {c['short_description']}"
+            for c in binary_occurrence
+        )
+        lines_max.append(
+            f"- Lista completa de critérios com seus pesos — garanta que CADA UM está coberto na resposta:\n{weighted_list}"
         )
 
     def _fmt(lines):
@@ -154,17 +213,18 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
             base_prompt +
             "\n\nGere uma resposta MEDIANA que deve obter uma nota próxima a metade do máximo disponível. "
             "REGRAS OBRIGATÓRIAS — siga à risca:\n"
-            "- Aborde entre 30% e 60% dos critérios de avaliação listados — ignore os demais completamente\n"
-            "- Mesmo os critérios abordados devem ser tratados de forma SIMPLES e OBJETIVA: cubra menos da metade do esperado para cada um\n"
-            "- Demonstre domínio técnico básico: evite termos MUITO específicos\n"
-            "- Use apenas afirmações genéricas, vagas e com poucos exemplos concretos, mas mantenha uma linguagem simples e textualmente correta\n"
+            "- Aborde pelo menos metade dos critérios de avaliação listados, usando os termos técnicos corretos para que o corretor os reconheça\n"
+            "- Para cada critério abordado, trate de forma SIMPLES e objetiva: mencione o conceito mas sem aprofundamento completo\n"
+            "- Os critérios NÃO abordados devem ser completamente omitidos da resposta\n"
+            "- Demonstre conhecimento básico do tema: use alguma terminologia técnica, mas evite desenvolver argumentação completa\n"
             "- Cometa poucos erros gramaticais e use estrutura de texto funcional e objetiva, mas sem grande refinamento estrutural ou estilístico"
             + criteria_hints["med"]
         )
         prompt_max = (
             base_prompt +
             "\n\nGere uma resposta EXCELENTE E MÁXIMA que gabarite a questão, atingindo a nota mais alta possível. "
-            "Para isso: atenda TODOS os critérios de avaliação listados acima de forma completa, precisa e aprofundada; "
+            "Para isso: atenda TODOS os critérios de avaliação listados de forma completa, precisa e aprofundada; "
+            "cada critério avaliativo deve ser coberto individualmente — NÃO omita nenhum; "
             "demonstre domínio pleno do tema com argumentação sólida, bem fundamentada e exemplos pertinentes; "
             "escreva com clareza, coesão e sem nenhum erro gramatical; "
             "a resposta deve ser impecável, bem estruturada e tecnicamente perfeita em todos os pontos avaliados."
@@ -234,6 +294,22 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
         sheets.insert_line(row)
         row_written = True
         print(f"[Concluído] {integration_id} inserido na planilha com sucesso.")
+
+        # --- Debug: print sample assessment for each failing validation column ---
+        v2 = validator.Validator()
+        checks = [
+            ("pass_bolo",      v2.pass_bolo(bolo_score),                          bolo_assessment),
+            ("pass_ruim_var",  v2.pass_var(ruim_scores, max_score),               ruim_assessments[0]),
+            ("pass_med_var",   v2.pass_var(med_scores,  max_score),               med_assessments[0]),
+            ("pass_max_var",   v2.pass_var(max_scores,  max_score),               max_assessments[0]),
+            ("pass_min_score", v2.pass_min_score(ruim_scores, max_score),         ruim_assessments[0]),
+            ("pass_med_score", v2.pass_med_score(med_scores, max_score),          med_assessments[0]),
+            ("pass_max_score", v2.pass_max_score(max_scores, max_score),          max_assessments[0]),
+        ]
+        for col_name, result, sample_assessment in checks:
+            if result is False:
+                print(f"\n[DEBUG FALSE] {col_name} — sample assessment:")
+                print(json.dumps(sample_assessment, ensure_ascii=False, indent=2))
 
         # --- Log detalhado na aba esteira_log ---
         if sheets_log:
