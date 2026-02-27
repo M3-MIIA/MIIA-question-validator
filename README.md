@@ -64,7 +64,7 @@ miia-question-validator/
 
 ## Pré-requisitos
 
-- Python 3.13+
+- [uv](https://docs.astral.sh/uv/) instalado
 - Acesso ao banco de dados PostgreSQL da MIIA
 - Token de acesso à API MIIA
 - Instância LiteLLM configurada (com modelo acessível)
@@ -73,12 +73,11 @@ miia-question-validator/
 ## Instalação
 
 ```bash
-# Crie e ative o ambiente virtual
-python -m venv .venv
-source .venv/bin/activate
+# Instale o uv (caso ainda não tenha)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Instale as dependências
-pip install -e .
+# Instale as dependências (cria o venv automaticamente)
+uv sync
 ```
 
 ## Configuração
@@ -127,7 +126,7 @@ Coloque o arquivo `auth_google.json` da service account Google na raiz do projet
 2. Execute o pipeline:
 
 ```bash
-python src/main.py
+uv run src/main.py
 ```
 
 O pipeline processa cada questão sequencialmente, exibindo o progresso no terminal, e insere uma linha de resultado na planilha Google Sheets ao final de cada questão.
