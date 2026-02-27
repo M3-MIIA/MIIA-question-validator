@@ -303,7 +303,7 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
             ("pass_med_var",   v2.pass_var(med_scores,  max_score),               med_assessments[0]),
             ("pass_max_var",   v2.pass_var(max_scores,  max_score),               max_assessments[0]),
             ("pass_min_score", v2.pass_min_score(ruim_scores, max_score),         ruim_assessments[0]),
-            ("pass_med_score", v2.pass_med_score(med_scores, max_score),          med_assessments[0]),
+            ("pass_med_score", v2.pass_med_score(med_scores, max_score, ruim_scores + med_scores + max_scores), med_assessments[0]),
             ("pass_max_score", v2.pass_max_score(max_scores, max_score),          max_assessments[0]),
         ]
         for col_name, result, sample_assessment in checks:
