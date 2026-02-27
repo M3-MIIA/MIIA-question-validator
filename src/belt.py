@@ -6,27 +6,169 @@ import miia_api
 import sheet
 import validator
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 
 
-def submit_n_times(client, integration_id, answer, n, delay=1):
+_LEGAL_PIECE_KEYWORDS = (
+    "adi", "adpf", "adin", "ação direta", "ação declaratória", "adco",
+    "habeas corpus", "mandado de segurança", "mandado de injunção",
+    "recurso extraordinário", "recurso especial", "petição", "peça jurídica",
+    "apelação", "agravo", "embargos", "reclamação constitucional",
+    "impetrar", "impugnar", "propor ação", "ajuizar",
+)
+
+def _is_legal_piece(criteria):
+    """Returns True if the question likely requires a formal legal document."""
+    codes = " ".join((c.get("classification_code") or "").lower() for c in criteria)
+    descs = " ".join((c.get("short_description") or "").lower() for c in criteria)
+    combined = codes + " " + descs
+    return any(kw in combined for kw in _LEGAL_PIECE_KEYWORDS)
+
+
+def _build_criteria_instructions(criteria):
+    """
+    Builds a contextual instruction block based on criteria metadata.
+    Returns a dict with keys 'ruim', 'med', 'max' containing specific guidance strings.
+    """
+    binary_occurrence = sorted(
+        [c for c in criteria if (c.get("type") or "").upper() == "BINARY"
+         and (c.get("eval_target") or "").upper() == "OCCURRENCE"
+         and c.get("weight") and c["weight"] > 0],
+        key=lambda c: c["weight"], reverse=True
+    )
+    deviation_criteria = [
+        c for c in criteria
+        if (c.get("eval_target") or "").upper() == "DEVIATION"
+        or (c.get("weight") and c["weight"] < 0)
+    ]
+    quantitative_criteria = [
+        c for c in criteria if (c.get("type") or "").upper() == "QUANTITATIVE"
+    ]
+    high_rigor = [
+        c for c in criteria
+        if (c.get("rigor_level") or "").upper() in ("HIGH", "VERY_HIGH")
+    ]
+
+    # Top half by weight for med; rest ignored
+    mid = max(1, len(binary_occurrence) // 2)
+    binary_top = binary_occurrence[:mid]
+    binary_rest = binary_occurrence[mid:]
+
+    lines_ruim = []
+    lines_med = []
+    lines_max = []
+
+    # --- Grupo A: peça jurídica formal ---
+    if _is_legal_piece(criteria):
+        all_descs = "; ".join(c["short_description"] for c in binary_occurrence)
+        top_descs = "; ".join(f'"{c["short_description"]}"' for c in binary_top)
+        rest_descs = "; ".join(f'"{c["short_description"]}"' for c in binary_rest) if binary_rest else None
+
+        lines_ruim.append(
+            "- ATENÇÃO: esta questão exige a redação de uma PEÇA JURÍDICA FORMAL (petição, recurso, ação constitucional, etc.). "
+            "Para uma resposta RUIM, escreva um texto dissertativo genérico sobre o tema jurídico, "
+            "SEM estrutura de petição (sem endereçamento, sem qualificação das partes, sem pedido formal, sem fundamentos legais específicos). "
+            "Não cite artigos de lei nem ações constitucionais pelo nome correto."
+        )
+        lines_med.append(
+            "- ATENÇÃO: esta questão exige a redação de uma PEÇA JURÍDICA FORMAL. "
+            "Para uma resposta MEDIANA, escreva a peça com estrutura básica (endereçamento, qualificação, pedido), "
+            "mas aborde com profundidade apenas os seguintes critérios de maior peso: "
+            + top_descs + ". "
+            + (f"Ignore completamente: {rest_descs}. " if rest_descs else "")
+            + "Mencione os artigos constitucionais relevantes dos critérios abordados, mas sem explorar todos os fundamentos."
+        )
+        lines_max.append(
+            "- ATENÇÃO: esta questão exige a redação de uma PEÇA JURÍDICA FORMAL completa e tecnicamente perfeita. "
+            "Inclua: endereçamento correto, qualificação das partes, legitimidade ativa, competência, "
+            "fundamentos de mérito com artigos específicos da CRFB/88 e legislação aplicável, pedido cautelar (se cabível) e pedido principal. "
+            "Critérios que DEVEM ser cobertos explicitamente: " + all_descs + "."
+        )
+
+    elif binary_occurrence:
+        # --- Grupos B/C: questões dissertativas comuns ---
+        all_descs = "; ".join(c["short_description"] for c in binary_occurrence)
+        top_descs = "; ".join(f'"{c["short_description"]}"' for c in binary_top)
+        rest_descs = "; ".join(f'"{c["short_description"]}"' for c in binary_rest) if binary_rest else None
+
+        lines_ruim.append(
+            f"- Os critérios a seguir são BINÁRIOS (o corretos verifica se o conceito foi mencionado ou não). "
+            f"Para uma resposta RUIM, NÃO mencione NENHUM deles diretamente: {all_descs}. "
+            f"Fale sobre o tema de forma vaga e genérica, sem nomear conceitos, leis ou artigos específicos."
+        )
+        lines_med.append(
+            f"- Os critérios a seguir são BINÁRIOS. Para uma resposta MEDIANA, mencione com clareza "
+            f"ao menos metade deles, priorizando os de maior peso: {top_descs}. "
+            + (f"Ignore completamente: {rest_descs}. " if rest_descs else "")
+            + "Para os critérios que mencionar, use os termos técnicos corretos mas sem aprofundamento excessivo."
+        )
+        lines_max.append(
+            f"- Os critérios a seguir são BINÁRIOS. Para uma resposta MÁXIMA, mencione TODOS explicitamente "
+            f"com precisão técnica e fundamentação: {all_descs}."
+        )
+
+    if deviation_criteria:
+        dev_descs = "; ".join(c["short_description"] for c in deviation_criteria)
+        lines_ruim.append(
+            f"- Os critérios a seguir são de PENALIZAÇÃO (erros subtraem pontos). "
+            f"Para uma resposta RUIM, provoque intencionalmente essas falhas: {dev_descs}."
+        )
+        lines_med.append(
+            f"- Critérios de penalização: evite as seguintes falhas para não perder pontos: {dev_descs}."
+        )
+        lines_max.append(
+            f"- Critérios de penalização: evite completamente: {dev_descs}."
+        )
+
+    if quantitative_criteria:
+        lines_ruim.append(
+            "- Há critérios QUANTITATIVOS de linguagem/estrutura: cometa vários erros gramaticais, de coesão e estrutura textual."
+        )
+        lines_med.append(
+            "- Há critérios QUANTITATIVOS de linguagem/estrutura: cometa apenas poucos erros gramaticais ou de coesão."
+        )
+        lines_max.append(
+            "- Há critérios QUANTITATIVOS de linguagem/estrutura: texto impecável, sem nenhum erro gramatical ou de coesão."
+        )
+
+    if high_rigor:
+        lines_max.append(
+            "- Alguns critérios têm rigor HIGH ou VERY_HIGH: seja extremamente preciso e técnico, use terminologia específica."
+        )
+        lines_med.append(
+            "- Alguns critérios têm rigor HIGH: demonstre conhecimento moderado, sem ser vago demais."
+        )
+
+    # --- Grupo C: lista explícita de critérios com peso para o prompt_max ---
+    if binary_occurrence:
+        weighted_list = "\n".join(
+            f"  * [{c['weight']}pt] {c['short_description']}"
+            for c in binary_occurrence
+        )
+        lines_max.append(
+            f"- Lista completa de critérios com seus pesos — garanta que CADA UM está coberto na resposta:\n{weighted_list}"
+        )
+
+    def _fmt(lines):
+        if not lines:
+            return ""
+        return "\n\nINSTRUÇÕES ADICIONAIS BASEADAS NOS CRITÉRIOS DE AVALIAÇÃO:\n" + "\n".join(lines)
+
+    return {
+        "ruim": _fmt(lines_ruim),
+        "med":  _fmt(lines_med),
+        "max":  _fmt(lines_max),
+    }
+
+
+def submit_n_times(client, integration_id, answer, n, delay=0.5):
     jobs = []
     for _ in range(n):
         job = client.create_job(integration_id, answer)
         jobs.append(job)
         time.sleep(delay)
     return jobs
-
-
-def collect_scores(client, jobs):
-    scores = []
-    assessments = []
-    for job in jobs:
-        assessment = client.check_status(job)
-        assessments.append(assessment)
-        score = assessment["result"]["score"] if assessment else None
-        scores.append(score)
-    return scores, assessments
 
 
 def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None):
@@ -51,53 +193,86 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
         # --- Geração das respostas sintéticas ---
         base_prompt = f""" Veja o seguinte enunciado: {statement}, que possui os seguintes critérios de avaliacao: {criteria}, me retorne UNICAMENTE UM JSON estruturado da seguinte forma: {{"content": [{{"answer": ""}}]}}. SEM ```json ... ```"""
 
+        criteria_hints = _build_criteria_instructions(criteria)
+
         cake_recipe = """{"content":[{"answer": "Preparar um bolo de cenoura com cobertura de chocolate é uma prática culinária bastante comum nos lares brasileiros, sendo associada a momentos de convivência e simplicidade. A receita, apesar de tradicional, exige atenção a alguns detalhes para que o resultado final seja macio e saboroso.\n\nInicialmente, é necessário separar os ingredientes básicos, como cenouras, ovos, óleo, açúcar e farinha de trigo. As cenouras devem ser descascadas, cortadas em pedaços pequenos e batidas no liquidificador juntamente com os ovos e o óleo, até que se obtenha uma mistura homogênea. Em seguida, adiciona-se o açúcar e bate-se novamente, garantindo que todos os componentes estejam bem incorporados.\n\nApós esse processo, a mistura líquida deve ser transferida para um recipiente maior, no qual se acrescenta a farinha de trigo peneirada, mexendo-se cuidadosamente para evitar a formação de grumos. Por fim, adiciona-se o fermento químico em pó, misturando de forma delicada. A massa é então despejada em uma forma untada e levada ao forno preaquecido, onde deve assar até atingir consistência firme.\n\nEnquanto o bolo assa, pode-se preparar a cobertura, utilizando ingredientes simples como chocolate em pó, açúcar, manteiga e leite. Esses elementos devem ser levados ao fogo baixo, mexendo-se constantemente até formar uma calda lisa. Após retirar o bolo do forno, basta espalhar a cobertura ainda quente sobre a massa.\n\nDessa forma, o bolo de cenoura com chocolate destaca-se como uma receita prática e acessível, adequada tanto para o consumo cotidiano quanto para ocasiões especiais, demonstrando que a culinária pode ser, ao mesmo tempo, funcional e prazerosa."}]}"""
 
-        prompt_med = (
-            base_prompt +
-            "\n\nGere uma resposta INSATISFATÓRIA, com uma expectativa de um resultado menor que 75% por cento da pontuação máxima, dado os critérios avaliativos. "
-            "Para isso: NÃO atenda uma parcela significativa dos critérios de avaliação listados acima; "
-            "aborde o tema de forma superficial ou equivocada, sem demonstrar pleno conhecimento; "
-            "cometa poucos erros de escrita (erros gramaticias, de concortância); "
-            "a resposta deve ser simples e vaga, com argumentacao pertinente ao tema apesar da falta de profundidade."
-        )
         prompt_ruim = (
             base_prompt +
-            "\n\nGere uma resposta RUIM, com uma expectativa de um resultado menor que 60 por cento da pontuação máxima, dado os critérios avaliativos. "
-            "Para isso: NÃO atenda quase nenhum dos critérios de avaliação listados acima; "
-            "aborde o tema de forma completamente superficial ou equivocada, sem demonstrar conhecimento; "
-            "cometa erros de escrita (concordância, coesão); "
-            "a resposta deve ser curta e vaga, sem argumentação ou fundamentação."
+            "\n\nGere uma resposta RUIM que deve obter menos de 35% da pontuação máxima. "
+            "REGRAS OBRIGATÓRIAS:\n"
+            "- Trate o tema de forma superficial, como alguém que tem noção vaga do assunto mas não estudou\n"
+            "- NÃO atenda nenhum dos critérios de avaliação de forma satisfatória — mencione o tema mas sem profundidade\n"
+            "- NÃO use termos técnicos, leis, normas, conceitos específicos da área ou nomenclatura especializada\n"
+            "- Use apenas afirmações genéricas e senso comum — sem dados, exemplos, embasamento ou fundamentação\n"
+            "- Escreva com alguns erros de coesão e argumentação fraca, mas de forma legível\n"
+            "- Apesar disso, segundo os critérios de correção a resposta deve tentar NÃO ZERAR, pontuando pouco, mas pontuando em algum critério avaliativo"
+            + criteria_hints["ruim"]
+        )
+        prompt_med = (
+            base_prompt +
+            "\n\nGere uma resposta MEDIANA que deve obter uma nota próxima a metade do máximo disponível. "
+            "REGRAS OBRIGATÓRIAS — siga à risca:\n"
+            "- Aborde pelo menos metade dos critérios de avaliação listados, usando os termos técnicos corretos para que o corretor os reconheça\n"
+            "- Para cada critério abordado, trate de forma SIMPLES e objetiva: mencione o conceito mas sem aprofundamento completo\n"
+            "- Os critérios NÃO abordados devem ser completamente omitidos da resposta\n"
+            "- Demonstre conhecimento básico do tema: use alguma terminologia técnica, mas evite desenvolver argumentação completa\n"
+            "- Cometa poucos erros gramaticais e use estrutura de texto funcional e objetiva, mas sem grande refinamento estrutural ou estilístico"
+            + criteria_hints["med"]
         )
         prompt_max = (
             base_prompt +
             "\n\nGere uma resposta EXCELENTE E MÁXIMA que gabarite a questão, atingindo a nota mais alta possível. "
-            "Para isso: atenda TODOS os critérios de avaliação listados acima de forma completa, precisa e aprofundada; "
+            "Para isso: atenda TODOS os critérios de avaliação listados de forma completa, precisa e aprofundada; "
+            "cada critério avaliativo deve ser coberto individualmente — NÃO omita nenhum; "
             "demonstre domínio pleno do tema com argumentação sólida, bem fundamentada e exemplos pertinentes; "
             "escreva com clareza, coesão e sem nenhum erro gramatical; "
             "a resposta deve ser impecável, bem estruturada e tecnicamente perfeita em todos os pontos avaliados."
+            + criteria_hints["max"]
         )
 
         print("\n[2/5] Gerando respostas sintéticas...")
-        ruim_answer = clientLLM.send_prompt(prompt_ruim)
-        med_answer  = clientLLM.send_prompt(prompt_med)
-        max_answer  = clientLLM.send_prompt(prompt_max)
+        with ThreadPoolExecutor(max_workers=3) as exc:
+            f_ruim = exc.submit(clientLLM.send_prompt, prompt_ruim)
+            f_med  = exc.submit(clientLLM.send_prompt, prompt_med)
+            f_max  = exc.submit(clientLLM.send_prompt, prompt_max)
+        ruim_answer = f_ruim.result()
+        med_answer  = f_med.result()
+        max_answer  = f_max.result()
 
         # --- Submissão para a API da MIIA ---
         print("\n[3/5] Submetendo respostas para correção...")
-        bolo_job  = submit_n_times(clientMIIA, integration_id, cake_recipe, n=1)[0]
-        ruim_jobs = submit_n_times(clientMIIA, integration_id, ruim_answer, n=3)
-        med_jobs  = submit_n_times(clientMIIA, integration_id, med_answer,  n=3)
-        max_jobs  = submit_n_times(clientMIIA, integration_id, max_answer,  n=3)
+        with ThreadPoolExecutor(max_workers=4) as exc:
+            f_bolo = exc.submit(submit_n_times, clientMIIA, integration_id, cake_recipe, 1)
+            f_ruim = exc.submit(submit_n_times, clientMIIA, integration_id, ruim_answer, 3)
+            f_med  = exc.submit(submit_n_times, clientMIIA, integration_id, med_answer,  3)
+            f_max  = exc.submit(submit_n_times, clientMIIA, integration_id, max_answer,  3)
+        bolo_job  = f_bolo.result()[0]
+        ruim_jobs = f_ruim.result()
+        med_jobs  = f_med.result()
+        max_jobs  = f_max.result()
 
         # --- Coleta dos resultados ---
         print("\n[4/5] Aguardando e coletando resultados...")
-        bolo_assessment = clientMIIA.check_status(bolo_job)
-        bolo_score = bolo_assessment["result"]["score"] if bolo_assessment else None
+        all_jobs = [bolo_job] + ruim_jobs + med_jobs + max_jobs
 
-        ruim_scores, ruim_assessments = collect_scores(clientMIIA, ruim_jobs)
-        med_scores,  med_assessments  = collect_scores(clientMIIA, med_jobs)
-        max_scores,  max_assessments  = collect_scores(clientMIIA, max_jobs)
+        def _check_job(args):
+            idx, job = args
+            time.sleep(idx * 0.5)
+            return idx, clientMIIA.check_status(job, verbose=False)
+
+        with ThreadPoolExecutor(max_workers=len(all_jobs)) as exc:
+            all_results = dict(exc.map(_check_job, enumerate(all_jobs)))
+
+        bolo_assessment  = all_results[0]
+        ruim_assessments = [all_results[i] for i in range(1, 4)]
+        med_assessments  = [all_results[i] for i in range(4, 7)]
+        max_assessments  = [all_results[i] for i in range(7, 10)]
+
+        bolo_score  = bolo_assessment["result"]["score"] if bolo_assessment else None
+        ruim_scores = [a["result"]["score"] if a else None for a in ruim_assessments]
+        med_scores  = [a["result"]["score"] if a else None for a in med_assessments]
+        max_scores  = [a["result"]["score"] if a else None for a in max_assessments]
 
         ref_assessment = bolo_assessment or (max_assessments[-1] if max_assessments else None)
         max_score = ref_assessment["result"]["max_score"] if ref_assessment else None
@@ -119,6 +294,22 @@ def run(integration_id, clientMIIA, clientLLM, database, sheets, sheets_log=None
         sheets.insert_line(row)
         row_written = True
         print(f"[Concluído] {integration_id} inserido na planilha com sucesso.")
+
+        # --- Debug: print sample assessment for each failing validation column ---
+        v2 = validator.Validator()
+        checks = [
+            ("pass_bolo",      v2.pass_bolo(bolo_score),                          bolo_assessment),
+            ("pass_ruim_var",  v2.pass_var(ruim_scores, max_score),               ruim_assessments[0]),
+            ("pass_med_var",   v2.pass_var(med_scores,  max_score),               med_assessments[0]),
+            ("pass_max_var",   v2.pass_var(max_scores,  max_score),               max_assessments[0]),
+            ("pass_min_score", v2.pass_min_score(ruim_scores, max_score),         ruim_assessments[0]),
+            ("pass_med_score", v2.pass_med_score(med_scores, max_score),          med_assessments[0]),
+            ("pass_max_score", v2.pass_max_score(max_scores, max_score),          max_assessments[0]),
+        ]
+        for col_name, result, sample_assessment in checks:
+            if result is False:
+                print(f"\n[DEBUG FALSE] {col_name} — sample assessment:")
+                print(json.dumps(sample_assessment, ensure_ascii=False, indent=2))
 
         # --- Log detalhado na aba esteira_log ---
         if sheets_log:

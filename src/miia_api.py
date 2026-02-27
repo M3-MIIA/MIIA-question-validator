@@ -41,16 +41,17 @@ class MIIA_API:
             exit(1)
 
 
-    def check_status(self, job_id):
+    def check_status(self, job_id, verbose=True):
         url_get = f"{self.base_url}/textual-corrections/v1/jobs/{job_id}"
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json"
         }
-        print(f"\n2. Starting Job status check (Polling)...")
+        if verbose:
+            print(f"\n2. Starting Job status check (Polling)...")
 
-        max_try = 15
-        interval_s = 4
+        max_try = 60
+        interval_s = 3
 
         for attempt in range(1, max_try + 1):
             try:
@@ -61,27 +62,29 @@ class MIIA_API:
                 current_status = data_get.get("status")
 
                 if current_status == "running":
-                    print(f"   [{attempt}/{max_try}] Status: running. Waiting {interval_s}s...")
+                    if verbose:
+                        print(f"   [{attempt}/{max_try}] Status: running. Waiting {interval_s}s...")
                     time.sleep(interval_s)
                     continue
 
                 elif current_status == "completed" or current_status == "success":
-                    print("\n[Success] Processing completed!")
-                    print("-" * 40)
-                    print(data_get)
-                    print("-" * 40)
+                    if verbose:
+                        print("\n[Success] Processing completed!")
+                        print("-" * 40)
+                        print(data_get)
+                        print("-" * 40)
                     return data_get
 
                 elif current_status == "failed" or current_status == "error":
-                    print(f"\n[Backend Error] Job failed internally: {data_get}")
+                    print(f"\n[Backend Error] Job {job_id} failed: {data_get}")
                     break
 
                 else:
-                    print(f"\n[Warning] Unknown status returned: '{current_status}'. Full response: {data_get}")
+                    print(f"\n[Warning] Job {job_id} unknown status: '{current_status}'. Response: {data_get}")
                     break
 
             except requests.exceptions.RequestException as e:
-                print(f"\nNetwork failure during GET: {e}")
+                print(f"\nNetwork failure during GET for job {job_id}: {e}")
                 break
         else:
-            print("\n[Timeout] Maximum number of attempts reached. Job took too long.")
+            print(f"\n[Timeout] Job {job_id} não completou em {max_try * interval_s}s.")

@@ -9,8 +9,8 @@ Para cada questão (identificada por um `integration_id`), o pipeline executa 5 
 1. **Busca no banco** — Recupera o enunciado e os critérios de avaliação da questão no PostgreSQL.
 2. **Geração de respostas sintéticas** — Usa um LLM (via LiteLLM) para gerar três tipos de resposta:
    - **Ruim**: deve atingir menos de 35% da nota máxima.
-   - **Média**: deve atingir entre 35% e 75% da nota máxima.
-   - **Máxima**: deve atingir mais de 75% da nota máxima.
+   - **Média**: deve atingir entre 35% e 80% da nota máxima.
+   - **Máxima**: deve atingir mais de 80% da nota máxima.
 3. **Submissão à API MIIA** — Cada tipo de resposta é submetido 3 vezes (para medir consistência). Também é submetida uma "receita de bolo de cenoura" como resposta completamente fora de contexto — espera-se nota zero.
 4. **Coleta de resultados** — O pipeline faz polling da API até os jobs concluírem e coleta as notas.
 5. **Validação e registro** — Critérios são verificados e o resultado é inserido na planilha Google Sheets.
@@ -24,8 +24,8 @@ Para cada questão (identificada por um `integration_id`), o pipeline executa 5 
 | `pass_med_var` | Desvio padrão das 3 respostas médias < 20% da nota máxima |
 | `pass_max_var` | Desvio padrão das 3 respostas máximas < 20% da nota máxima |
 | `pass_min_score` | Média das respostas ruins < 35% da nota máxima |
-| `pass_med_score` | 35% ≤ Média das respostas médias ≤ 75% da nota máxima |
-| `pass_max_score` | Média das respostas máximas > 75% da nota máxima |
+| `pass_med_score` | 35% ≤ Média das respostas médias ≤ 80% da nota máxima |
+| `pass_max_score` | Média das respostas máximas > 80% da nota máxima |
 
 ## Estrutura do projeto
 
